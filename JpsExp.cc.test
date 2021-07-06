@@ -1,0 +1,1443 @@
+#include <stdio.h>
+#include <iostream>
+#include <fstream>
+#include "TLorentzVector.h"
+#include "VDDCRec/kdcpar.h"
+#include "VDDCRec/kdcvd.h"
+#include "VDDCRec/ktracks.h"
+#include "VDDCRec/ktrkadccharge.h"
+#include "VDDCRec/khits.h"
+#include "ReadNat/kcalls.h"
+#include "KDisplay/kdisplay_event.h"
+#include "TROOT.h"
+#include "TTree.h"
+#include "TFile.h"
+#include "TMinuit.h"
+#include "VDDCRec/kdcswitches.h"
+#include <KDB/kdb.h>
+#include "KEmcRec/emc_system.h"
+#include "KrToF/tof_system.h"
+#include "VDDCRec/kedr_trigger.h"
+#include "ReadNat/read_nat_c.h"  
+#include "ReadNat/re_def.h"
+#include "ReadNat/ss_def.h"
+#include "KrMu/mu_system.h"
+#include "KrMu/mu_event.h"
+#include "KrMu/mu_status.h"
+#include  "ReadNat/trg_argmask_c.h"
+#include  "ReadNat/trg_df.h"
+#include "TVector.h"
+#include "TMatrix.h"
+#include <argp.h>
+#include "KrToF/sc_hits.h"
+#include "VDDCRec/kvd.h"
+#include "VDDCRec/ktof.h"
+
+
+int bad_listtof1[128]=
+{
+  //1 2 3 4 5 6 7 8 9 10,
+    0,0,0,0,0,0,0,0,0,0,
+  //11,12,13,14,15,16,17,18,19,20
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+  //21,22,23,24,25,26,27,28,29,30
+     0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+  //31,32,33,34,35,36,37,38,39,40
+     0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+  //41,42,43,44,45,46,47,48,49,50   
+     0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+  //51,52,53,54,55,56,57,58,59,60   
+     0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+  //61,62,63,64,65,66,67,68,69,70
+     0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+  //71,72,73,74,75,76,77,78,79,80   
+     0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+  //81,82,83,84,85,86,87,88,89,90   
+     0,0, 0, 0, 0, 0, 0, 0, 0, 0,
+  //91,92,93,94,95,96,97,98,99,100   
+     0, 2, 0,  0,  0, 0, 0, 0, 0, 0,
+  //101,102,103,104,105,106,107,108,109,110   
+     0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
+  //111,112,113,114,115,116,117,118,119,120   
+     0, 0,   0,  0,  0,  0,  0,  0,  0,  0,
+  //121,122,123,124,125,126,127,128   
+     0, 0,   0,  0,  0,  0,  0,  0
+};
+
+#define Pi 3.14159265
+#define mpi 139.57018
+#define DrawCuts 0
+
+double pl2(double x){return 0.5*(3.*x*x-1);};
+
+double sqr(double x) {
+  return x*x;
+}
+using namespace std;
+
+static char doc[] ="jps exp";
+/* A description of the arguments we accept*/
+static char args_doc[] = "";
+static struct argp_option options[] = {
+  {"num", 'n', "number",  0, "Number of the Energy Point",1 },
+  {"nrun", 'r', "run",  0, "Number of the Run",2 },
+  { 0,0,0,0,0,0 }
+};
+
+struct arguments
+{
+  int num;
+  int nrun;
+};
+static error_t parse_opt (int key, char *arg, struct argp_state *state)
+{
+  union ArG{
+    struct arguments *arguments; 
+    void *void_arg;
+  };
+  ArG arg_union;
+  arg_union.void_arg=state->input;
+  switch (key) {
+  case 'n': arg_union.arguments->num = atoi(arg); break;
+  case 'r': arg_union.arguments->nrun = atoi(arg); break;
+  }
+    return 0;
+};
+
+static struct argp argp = { options, parse_opt, args_doc, doc };
+  
+extern "C" void kedr_pack_();
+extern "C" void kedr_cosmic_(int* fls,int* Ncosmic);
+
+extern "C" void kedrsepbeams_(int* NrepArg,int* c1,int* c2,int* c3,int* c4,int* c5,int* c6,int* c7,int* c8);
+extern "C" void kedrsepbeams_hist_(int* pawcsize,int* id,float* zchi2,int* nbins,float* vmin,float* vmax);  
+extern "C" void kedrsepbeams_name_(char* fnamebg);
+extern "C" void kedrsepbeams_bgfile_(char* fnamebgl);
+extern "C" void kedrsepbeams_report_();
+extern "C" void k3ltrg_();
+
+//extern "C" 
+//{
+//  ktof_t ktof_;
+//}
+
+Int_t trckcls(Int_t Ncls,Float_t thet, Float_t phi){
+  Float_t dan=0;
+  Float_t phi1=0;
+  Float_t val = 5.;
+  Int_t numCL=0;
+  for(Int_t rcls=0;rcls<Ncls;rcls++)
+    {
+      
+      if(phi < 0){phi1 = phi + 2*Pi;}else phi1 = phi;
+      
+      dan =acos(sin(thet)*cos(phi1)*sin(semc.emc_theta[rcls]*Pi/180.)*cos(semc.emc_phi[rcls]*Pi/180.)+ sin(thet)*sin(phi1)*sin(semc.emc_theta[rcls]*Pi/180.)*sin(semc.emc_phi[rcls]*Pi/180.)+cos(thet)*cos(semc.emc_theta[rcls]*Pi/180.));           
+      if(dan < val)
+	{
+	  val = dan;              
+	  numCL = rcls;
+	}
+    }
+  return numCL;
+}          
+
+
+
+int main(int argc, char **argv)
+{
+  struct arguments arguments;
+  arguments.num=0;
+  argp_parse (&argp, argc, argv, 0, 0, &arguments);
+  cout << " energy point "<<arguments.num<< endl;  
+  cout << " run number "<<arguments.nrun<< endl;  
+
+  int WRun[200],nruns=0;
+  char rr[100];
+  sprintf(rr,"expruns%03d.dat",arguments.num);
+  printf("file '%s'\n",rr);
+  ifstream stream1(rr);
+  if(!stream1)  
+    { 
+      cout << "While opening a file an error is encountered" << endl; 
+    }
+  else
+    {
+      cout << "File is successfully opened" << endl; 
+    }
+ char a[1000];
+ stream1 >> a;
+ nruns=atoi(a);
+ for(int ii=0;ii<nruns;ii++){
+ stream1 >> a;
+ WRun[ii]=atoi(a);
+ cout<<WRun[ii]<<endl;
+}
+ int NCutEE=0;
+
+    /*
+    kdcswitches_.KcExp=1; // опция для поправки  X(t)
+    kdcswitches_.KemcAllowed=1;     //   поиск треков с использованием стрипов LKR
+    kdcswitches_.kEmcPatch=1; //  использование стрипов в нерабочих башнях 
+    kdcswitches_.kIPalternative=1; // использование вершины
+    kdcswitches_.kUseDCIP=1; // координаты вершины 
+    kdcpar1_.MaxHitVD=160;
+    kdcpar1_.MaxDClen=4500;
+    kdcpar1_.MaxHittedCells=110;    
+ char FileEMC[20];
+      sprintf(FileEMC,"param%01d.emc",arguments.EMCFILE);
+      emc_init_spec(FileEMC);
+   */
+ //  kdcswitches_.KtofAllowed=0;
+ //  kdcswitches_.KemcAllowed = 1;
+ //   kdcswitches_.kCosmInSigRuns = 0;
+ //  kdcswitches_.KcExp=1;
+ //  kdcswitches_.kEmcPatch=1;
+ //  kdcswitches_.kIPalternative=1;
+ //  kdcswitches_.kUseDCIP=1; 
+ kdcswitches_.KmuAllowed=1;//????? ? RND ? ??????? ???????
+   
+   char fname[256];
+   int openerr,runerr,readerr,closeerr, recselect=0, nevt=0;
+   int Nevents=100;
+   char  rootfile[10000];
+
+   //  if(arguments.nrun==0) sprintf(rootfile,"/spool/users/kozlova/JpsTrees/JpsExp05_newtest2_e%02d.root",arguments.num);
+   //    if(arguments.nrun!=0)
+   int fr=arguments.nrun;
+   // sprintf(rootfile,"/spool/users/kozlova/JpsTrees/new4exp/JpsExp05_newtest4_r%04d.root",fr);
+   sprintf(rootfile,"test_r%04d.root",fr);
+   //  sprintf(rootfile,"/spool/users/kozlova/JpsTrees/new3exp/JpsExp05_newtest3_r%04d.root",fr);
+   // sprintf(rootfile,"/spool/users/kozlova/JpsTrees/newPsiP/PsiPExp_r%04d.root",fr);
+   //   sprintf(rootfile,"test_r%04d.root",arguments.num);
+     printf("out root file '%s'\n",rootfile);
+   //   sprintf(rootfile,"/spool/users/kozlova/JpsTrees/test.root");
+   TFile *f1 = new TFile(rootfile,"RECREATE");
+   TTree *t1=new TTree("t1","tree"); 
+  
+   double LumE=0.,LumP=0.,LumM=0.;
+   double CosArray[100][100];
+   double CosArrayZ[100][100];
+   int TrArray[100];
+   int Ntime,Nsc1f,NscOut;
+   // int RunE[20]={5549 , 5550 , 5551 , 5552 , 5553 , 5554 , 5555 , 5556 , 5557 , 5558 , 5559 , 5560 , 5561 , 5563 , 5564 , 5565 , 5566 , 5567 , 5568 , 5569};
+   Int_t  VDlength,eDaq,Ntr,NtrIP,NtrBeam,Nemc, nemcdc[1000], type[1000],HitVD,HitDC,Ntrip,i1,i2,nee,ng,Ngamma;
+   Double_t Xv,Yv,Zv,SXv,SYv,SZv, weight, Eemc, Xip, Yip, Ptot, Px, Py, Pz, Ppz,EnTwo;
+   Int_t NevStop=0, NTrJet=0, TrkPath=0, MuCosm=0,ncross11=0, ncross12=0, ncross1=0, ncross2=0,  ncross3=0,NtofHits,numNeutrals=0,nhadr=0, Charge[10],NtracksSkip=0,Run,HitMu,itr1,itr2,numNeutrals40=0,numNeutrals80=0,ndcemc[100],vertex[100],Nsc;
+   Double_t E1=0.,E2=0.,dphi=0.,dtheta=0.,P[10],Theta[10],Phi[10], Ptr[10],SigmaTheta[10],SigmaPhi[10],E[10],P1=0.,P2=0.;
+   Double_t ERun=0,ERunErr=0, tof1r[100], tof1l[100],itofq[128], energy[1000],zemc[1000],phiemc[1000],thetaemc[1000],S[6],L[3],cosxy,cosz,cosxy1,Etotn,Etotc;
+   double  RxyTr[100],Sg[6],Lg[3],Chi2tr[20],RzTr[20],Zip;
+ int SC[128],Ncosmic;
+ double scTime[128], scAmpl[128],Et=0.;
+int PTOK=0,STOK=0,KlukvaErr=0,ynb=0 , TrigArg[11], PTMSK=0,PTMSK_dn_csi2=0,PTMSK_dn_lkr=0,PTMSK_kl_csi2=0,PTMSK_kl_lkr=0, PTMSK_dn_csi2lkr=0, PTMSK_kl_csi2lkr=0;
+ double X0IP[100],Y0IP[100],Z0IP[100];
+ int Nhits[100],NhitsVD[100];
+ int tof1l_st[100],tof1r_st[100],tof1l_n[100],tof1r_n[100],tof1b_n[100], tof[100];
+ double tof1l_ampl[100],tof1r_ampl[100],tof1b_ampl[100],tof1b_sig[100];
+ double xemc[100],yemc[100],dphiemc[100],dthetaemc[100],drhoemc[100], thetaemc_str[100],phiemc_str[100];
+
+
+ int Nee=0;
+ double eff_PTMSK=0., eff_PTMSK_dn_csi2=0., eff_PTMSK_dn_lkr=0., eff_PTMSK_kl_csi2=0.,eff_PTMSK_kl_lkr=0.,eff_PTMSK_dn_csi2lkr=0.,eff_PTMSK_kl_csi2lkr=0.;
+ // Double_t lumc=0,lume=0,lump=0;
+
+   t1->Branch("Eemc",&Eemc,"Eemc/D");
+   t1->Branch("Etotn",&Etotn,"Etotn/D");
+   t1->Branch("Etotc",&Etotc,"Etotc/D");
+   //   t1->Branch("Ptot",&Ptot,"Ptot/D");
+   //  t1->Branch("Px",&Px,"Px/D");
+   // t1->Branch("Py",&Py,"Py/D");
+   // t1->Branch("Pz",&Pz,"Pz/D");
+   t1->Branch("P1",&P1,"P1/D");
+   t1->Branch("P2",&P2,"P2/D");
+   //t1->Branch("Ppz",&Ppz,"Ppz/D");
+   t1->Branch("ERun",&ERun,"ERun/D");
+   t1->Branch("ERunErr",&ERunErr,"ERunErr/D");
+   // t1->Branch("lumc",&lumc,"lumc/D");
+   //t1->Branch("lump",&lump,"lump/D");
+   //t1->Branch("lume",&lume,"lume/D");
+   t1->Branch("Run",&Run,"Run/I");
+   t1->Branch("Ntr",&Ntr,"Ntr/I");
+   //  t1->Branch("NtracksSkip",&NtracksSkip,"NtracksSkip/I");
+   t1->Branch("NtrIP",&NtrIP,"NtrIP/I");
+   t1->Branch("NtrBeam",&NtrBeam,"NtrBeam/I");
+   t1->Branch("Nemc",&Nemc,"Nemc/I");
+   //  t1->Branch("TrkPath",&TrkPath,"TrkPath/I");
+   t1->Branch("NTrJet",&NTrJet,"NTrJet/I");
+   t1->Branch("MuCosm",&MuCosm,"MuCosm/I");
+   t1->Branch("HitMu",&HitMu,"HitMu/I");
+   // t1->Branch("ncross3",&ncross3,"ncross3/I");
+   // t1->Branch("ncross11",&ncross11,"ncross11/I");
+   // t1->Branch("ncross12",&ncross12,"ncross12/I");
+    t1->Branch("Xip",&Xip,"Xip/D");
+    t1->Branch("Yip",&Xip,"Yip/D");
+    t1->Branch("Zip",&Zip,"Zip/D");
+    t1->Branch("Xv",&Xv,"Xv/D");
+   t1->Branch("Yv",&Xv,"Yv/D");
+    t1->Branch("Zv",&Zv,"Zv/D");
+    t1->Branch("SXv",&SXv,"SXv/D");
+   t1->Branch("SYv",&SXv,"SYv/D");
+    t1->Branch("SZv",&SZv,"SZv/D");
+   t1->Branch("weight",&weight,"weight/D");
+   t1->Branch("VDlength",&VDlength,"VDlength/D");
+   t1->Branch("RxyTr",RxyTr,"RxyTr[Ntr]/D");
+   t1->Branch("tof1r",tof1r,"tof1r[Ntr]/D");
+   t1->Branch("tof1l",tof1l,"tof1l[Ntr]/D");
+   t1->Branch("itofq",itofq,"itofq[128]/D");
+   t1->Branch("eDaq",&eDaq,"eDaq/I");
+   t1->Branch("type",type,"type[Nemc]/I");
+   t1->Branch("energy",energy,"energy[Nemc]/D");
+   t1->Branch("zemc",zemc,"zemc[Nemc]/D");
+   t1->Branch("phiemc",phiemc,"phiemc[Nemc]/D");
+   t1->Branch("thetaemc",thetaemc,"thetaemc[Nemc]/D");
+   t1->Branch("nemcdc",nemcdc,"nemcdc[Nemc]/I");
+   t1->Branch("xemc",xemc,"xemc[Nemc]/D");
+   t1->Branch("yemc",yemc,"yemc[Nemc]/D");
+   t1->Branch("dphiemc",dphiemc,"dphiemc[Nemc]/D");
+   t1->Branch("dthetaemc",dthetaemc,"dthetaemc[Nemc]/D");
+   t1->Branch("drhoemc",drhoemc,"drhoemc[Nemc]/D");
+   t1->Branch("phiemc_str",phiemc_str,"phiemc_str[Nemc]/D");
+   t1->Branch("thetaemc_str",thetaemc_str,"thetaemc_str[Nemc]/D");
+   t1->Branch("E1",&E1,"E1/D");
+   t1->Branch("E2",&E2,"E2/D");
+   //  t1->Branch("dtheta",&dtheta,"dtheta/D");
+   // t1->Branch("dphi",&dphi,"dphi/D");
+   t1->Branch("numNeutrals",&numNeutrals,"numNeutrals/I"); 
+   t1->Branch("numNeutrals40",&numNeutrals40,"numNeutrals40/I"); 
+   t1->Branch("numNeutrals80",&numNeutrals80,"numNeutrals80/I"); 
+   //t1->Branch("Et",&Et,"Et/D");
+   t1->Branch("nhadr",&nhadr,"nhadr/I"); 
+   t1->Branch("Charge",&Charge,"Charge[nhadr]/I"); 
+   t1->Branch("P",P,"P[nhadr]/D");
+   t1->Branch("Theta",Theta,"Theta[nhadr]/D");
+   t1->Branch("Phi",Phi,"Phi[nhadr]/D");
+   t1->Branch("Ptr",Ptr,"Ptr[nhadr]/D");
+   ///  t1->Branch("SigmaTheta",SigmaTheta,"SigmaTheta[nhadr]/D");
+   ///t1->Branch("SigmaPhi",SigmaPhi,"SigmaPhi[nhadr]/D");
+    t1->Branch("E",E,"E[nhadr]/D");
+    //   t1->Branch("S",S,"S[6]/D");
+    t1->Branch("L",L,"L[3]/D");
+    //  t1->Branch("Lg",Lg,"Lg[3]/D");
+    //t1->Branch("cosxy",&cosxy,"cosxy/D");
+    t1->Branch("cosz",&cosz,"cosz/D");
+    t1->Branch("cosxy1",&cosxy1,"cosxy1/D");
+    t1->Branch("EnTwo",&EnTwo,"EnTwo/D");
+    t1->Branch("itr1",&itr1,"itr1/I");
+    t1->Branch("itr2",&itr2,"itr2/I");
+    t1->Branch("RzTr",RzTr,"RzTr[Ntr]/D");
+   t1->Branch("Chi2tr",&Chi2tr,"Chi2tr[Ntr]/D");
+   t1->Branch("NtofHits",&NtofHits,"NtofHits/I"); 
+   t1->Branch("HitVD",&HitVD,"HitVD/I"); 
+   t1->Branch("HitDC",&HitDC,"HitDC/I");
+   t1->Branch("vertex",vertex,"vertex[Ntr]/I");
+   t1->Branch("ndcemc",ndcemc,"ndcemc[Ntr]/I");
+   t1->Branch("Nsc",&Nsc,"Nsc/I");
+   t1->Branch("SC",SC,"SC[Nsc]/I"); 
+   t1->Branch("scTime",scTime,"scTime[Nsc]/D"); 
+   t1->Branch("scAmpl",scAmpl,"scAmpl[Nsc]/D"); 
+   t1->Branch("Ncosmic",&Ncosmic,"Ncosmic/I");
+   t1->Branch("Ntrip",&Ntrip,"Ntrip/I");
+   t1->Branch("nee",&nee,"nee/I");
+   t1->Branch("i1",&i1,"i1/I");
+   t1->Branch("i2",&i2,"i2/I");
+   t1->Branch("ng",&ng,"ng/I");
+   t1->Branch("Ngamma",&Ngamma,"Ngamma/I");
+   t1->Branch("NevStop",&NevStop,"NevStop/I");
+   t1->Branch("PTMSK",&PTMSK,"PTMSK/I"); 
+   t1->Branch("Nsc1f",&Nsc1f,"Nsc1f/I"); 
+   t1->Branch("TrigArg",&TrigArg,"TrigArg[11]/I");
+   t1->Branch("X0IP",X0IP,"X0IP[Ntr]/D"); 
+   t1->Branch("Y0IP",Y0IP,"Y0IP[Ntr]/D"); 
+   t1->Branch("Z0IP",Z0IP,"Z0IP[Ntr]/D"); 
+   t1->Branch("Nhits",Nhits,"Nhits[Ntr]/I"); 
+   t1->Branch("NhitsVD",NhitsVD,"NhitsVD[Ntr]/I"); 
+   t1->Branch("tof1l_st",tof1l_st,"tof1l_st[Ntr]/I");
+   t1->Branch("tof1r_st",tof1r_st,"tof1r_st[Ntr]/I"); 
+   t1->Branch("tof1l_n",tof1l_n,"tof1l_n[Ntr]/I");
+   t1->Branch("tof1r_n",tof1r_n,"tof1r_n[Ntr]/I"); 
+   t1->Branch("tof1b_n",tof1b_n,"tof1b_n[Ntr]/I"); 
+   t1->Branch("tof",tof,"tof[Ntr]/I"); 
+   t1->Branch("tof1l_ampl",tof1l_ampl,"tof1l_ampl[Ntr]/D");
+   t1->Branch("tof1r_ampl",tof1r_ampl,"tof1r_ampl[Ntr]/D"); 
+   t1->Branch("tof1b_ampl",tof1b_ampl,"tof1b_ampl[Ntr]/D"); 
+   t1->Branch("tof1b_sig",tof1b_sig,"tof1b_sig[Ntr]/D"); 
+
+   KDBconn *conn = kdb_open();
+   if (!conn)
+     {
+	printf("cannot connect to database\n");;      
+	return 0;      
+     }  
+   if(mu_default_init(1))  cout<<"Mu init error"<<endl;
+   if(mu_init_status())  cout<<"Mu init status error"<<endl;
+   //  tof_init();
+   tof_initAlternative(bad_listtof1);    
+
+   kDClayerOff(7,0);
+   kDClayerOff(6,0);
+   kDClayerOff(1,3);
+
+   //int run=5461; //17572;
+
+    float *abg=new float[1];
+    abg[0]=0.;
+    float abgInit[11]={0.,10.,15.,20.,25.,30.,35.,40.,45.,50.,60.};
+
+   /* char fnamebg[128]; 
+   char fnamebgl[128]; 
+   sprintf(fnamebg,"bginfo/histBkg_run%06d.rz",run); 
+   sprintf(fnamebgl,"bginfo/histBkg_run%06d.txt",run); 
+  
+   kedrsepbeams_name_(fnamebg);
+   cout<<"fnamebg:"<<fnamebg<<endl;
+   kedrsepbeams_bgfile_(fnamebgl);
+   cout<<"fnamebgl:"<<fnamebgl<<endl;*/
+    int run=0;
+    if (arguments.nrun!=0) nruns=1;
+    cout<<"nruns "<<nruns<<endl;
+    for(int irun=0; irun<nruns; irun++) 
+      {
+	if(arguments.nrun==0) run=WRun[irun];
+	else if(arguments.nrun!=0) run=arguments.nrun;
+	  // for(int run=4710; run<5027; run++) {
+  
+       //  if(run==RunE[l]){
+       //	cout<<"run "<<run<<endl;
+	//l++;
+	if(mu_get_db_status(run))  cout<<"Mu status error"<<endl;
+	if(mu_get_db_clbr_for_run(run)<0)  cout<<"Mu calib error"<<endl;
+	tof_run(run);  
+	
+	int  TableE=kdb_get_id(conn,"runenergy"); 
+	int  LengthE =kdb_get_length(conn,TableE);
+	
+	int bufferE[16];
+	int sizeE=kdb_read_for_run(conn,TableE,run,bufferE,LengthE);
+	double ERun1=bufferE[1]*0.000001;
+	double ERunErr1=bufferE[2]*0.000001;                        
+        cout<<"run "<<run<<" ERun "<<ERun1<<" ERunErr "<<ERunErr1<<endl;
+	 //	 cout<<" kdcpar1_.MaxHitVD "<< kdcpar1_.MaxHitVD<<endl;  //160
+	 //	 cout<<" kdcpar1_.MaxDClen "<< kdcpar1_.MaxDClen<<endl; //4500
+	 //	 cout<<" kdcpar1_.MaxHittedCells "<<kdcpar1_.MaxHittedCells<<endl;  //110  
+
+
+        int  IdTableLum=2007;
+	 int  LengthT = 24;
+	 int lumscan[32];
+	 int a1=0;
+	 a1=kdb_read_for_run(conn,IdTableLum,run,lumscan,LengthT);  
+	 if(a1==1){
+	   NevStop=lumscan[2];
+	   LumE+=lumscan[1];
+	   LumP+=lumscan[0];
+	   LumM+=TMath::Max(lumscan[0],lumscan[1]);
+	 }
+
+	 //	if(ERun>100.){
+	 //def
+		 sprintf(fname,"/space/runs/daq%06d.nat",run);
+	 //	 sprintf(fname,"/spool4/runs/daq%06d.nat.bz2",run);
+	 //	 sprintf(fname,"/store/users/offline/Skim/Cosm/cos024117.nat.bz2");
+	 // sprintf(fname,"/store/skim/RND2/Rnd%06d.nat.bz2",run);
+	 //sprintf(fname,"/store/skim/jpsi2008/mhadr/mhadr%06d.nat.bz2",run);
+	printf("file '%s'\n",fname);
+	
+	int trgerr=0;
+        PTOK=0,STOK=0,KlukvaErr=0,ynb=0 ;
+	kedr_read_trg_("trigger.dat",&trgerr,11);
+
+
+	//tof_run(run);   
+	kedr_open_nat(fname,&openerr);
+	//Run=run;
+	if ( openerr)
+	  {
+	    cout<<"openerr "<<openerr<<endl;
+	     printf("open error for %s\n",fname);
+	     Run=0;
+	     ///continue;
+	  }
+	//	if(Run>0)
+	//  {	
+	//	cout<<"before Run "<<RunZ<<endl;
+	//	int hh=0;
+      	while(1){ 
+	  // hh++;
+	  // 	cout<<"Run "<<run<<" eDaqNumber "<<eDaqNumber<<" Nstop "<<NevStop<<" nevt "<<nevt<<endl;
+	// 	if(eDaqNumber>14540){ 
+
+	    // cout<<"Run "<<RunZ<<" eDaqNumber "<<eDaqNumber<<endl;
+	    Run=run;
+	    ERun=ERun1;
+	    ERunErr=ERunErr1;
+	     kedr_read_nat(&readerr); 
+	     if( readerr) break; 
+	     //	if(kedrraw_.Header.DAQnumber>15000){ 
+	     kdcvdrec(0,&recselect);   
+	    tof_event_();
+	    ktoft(&Ntime,&Nsc1f,&NscOut); 
+
+	    int fls=1020;
+	    kedr_cosmic_(&fls,&Ncosmic);
+
+
+
+
+	    for(int h=0;h<11;h++){
+	    abg[0]=abgInit[h];
+	    kemc_trigger_abg(abg);
+	    kcalls_cb_.KEMCsts=-1;	
+	    ynb=224;
+	    kedr_trigger(ynb,&PTOK,&STOK,&KlukvaErr);
+	    TrigArg[h]=0;
+	    if(PTOK==1&&STOK==1&&KlukvaErr==0) TrigArg[h]=1; 
+	    }
+
+	      PTMSK=lvl2_c(l2sc2)+lvl1_c(l1csi1)*lvl1_c(l1csi2);
+	      PTMSK_dn_csi2=lvl2_c(l2sc2);
+	      PTMSK_dn_lkr=lvl1_c(l1lkr);
+	      //cout<<"danet: l2lkr "<<lvl2_c(l2lkr)<<" lvl1_c(l1lkr) "<<lvl1_c(l1lkr)<<" l2csi "<<lvl2_c(l2sc2)<<endl;
+
+	    int trgFdefault=0;
+	    kedr_trigger(trgFdefault,&PTOK,&STOK,&KlukvaErr);
+	    PTMSK_kl_csi2=lvl2_c(l2sc2);
+	    PTMSK_kl_lkr=lvl1_c(l1lkr);
+	    //cout<<"klukva: l2lkr "<<lvl2_c(l2lkr)<<" lvl1_c(l1lkr) "<<lvl1_c(l1lkr)<<" l2csi "<<lvl2_c(l2sc2)<<endl;
+
+	    /*
+	      bool PTMSK1=lvl2_c(l2sc2)>0;    
+	      bool PTMSK2=(lvl2_c(l2sc2)+lvl1_c(l1csi1)*lvl1_c(l1csi2))>0;      
+	      bool PTMSK3=(lvl2_c(l2sc2)+lvl1_c(l1lkr)+lvl1_c(l1csi1)*lvl1_c(l1csi2))>0;
+	      
+	      //    bool PTMSK3=(lvl2_c(l2sc2)+lvl1_c(l1csi1)*lvl1_c(l1csi2))>0;
+	      //bool PTMSK3=lvl2_c(l2sc2)+lvl1_c(l1csi1)*lvl1_c(l1csi2)>0;
+       bool PTMSK4=(lvl2_c(l2sc2)+lvl1_c(l1csi1)*lvl1_c(l1csi2)+
+         lvl1(l1csi1)*lvl1(l1csi2)*(lvl1_c(l1csi1)+lvl1_c(l1csi2)))>0;
+	    */
+	    
+	    k3ltrg_();
+	    /*   cout<<"lvl1(l1rnd) "<<lvl1(l1rnd)<<endl;
+	     if(lvl1(l1rnd)!=0)  {//случайный запуск	 
+	       kdisplay_event();
+	       }*/
+	    //  kdisplay_event();
+
+	     //   if(PTOK==1&&STOK==1&&KlukvaErr==0&&PTMSK>0){  
+	       //  cout<<"Run after trig "<<RunZ<<endl;
+	    
+		weight=kedrraw_.Header.Weight;
+		eDaq=eDaqNumber;
+		VDlength = kedrraw_.Header.Dir[SS_VD][1];
+		Ntr=eTracksAll;	
+		NtrIP=eTracksIP;
+		NtrBeam=eTracksBeam;
+		/*	if(Ntr==2){
+	         kdisplay_event();
+		  cout<<"weight: "<<weight<<endl;  
+		   cout<<"***Ntr "<<Ntr<<" eTracksAll "<<eTracksAll<<endl;
+		   }*/
+		Xip=kdcpar1_.Xip;
+		Yip=kdcpar1_.Yip;
+		Zip=kdcpar2_.Zip;
+		//	cout<<"Xip "<<Xip<<" Yip "<<Yip<<" Zip "<<Zip<<endl;	
+	   
+		Xv=eVertexX;
+		Yv=eVertexY;
+		Zv=eVertexZ;
+		
+		if(abs(Xv)<1000) Xv=Xv;
+		else Xv=0;
+		if(abs(Yv)<1000) Yv=Yv;
+		else Yv=0;
+		if(abs(Zv)<1000) Zv=Zv;
+		else Zv=0;
+		
+		SXv=eSigmaX;
+		SYv=eSigmaY;
+		SZv=eSigmaZ;
+		
+		Eemc=0;
+		Etotn=0;
+		Etotc=0;
+		Nemc=semc.emc_ncls;
+		numNeutrals=0;
+		numNeutrals40=0;
+		numNeutrals80=0;
+
+	      	//cout<<"ntofhits "<<kschit_.nScHits<<" barel "<<kschit_.nBarhits<<endl;
+		for(int y=0;y<kschit_.nScHits;y++){
+		  double phi = kschit_.phi[y]*180./Pi;
+		  if(phi<0) phi+=360.;
+		  //cout<<" phitof "<<phi<<" st "<<kschit_.status[y]<<" ampl "<<kschit_.amp_mev[y]<<" time "<<kschit_.time_ns[y]<<" dc "<<kschit_.numtrk[y]<<endl;
+		  }
+
+		for(Int_t rcls=0;rcls<Nemc;rcls++)
+		  {
+		     Eemc+=semc.emc_energy[rcls];
+		     if(semc.emc_dc_ntrk[rcls]==0){
+		       numNeutrals+=1;
+		       if(semc.emc_energy[rcls]>40.) numNeutrals40+=1;
+		       if(semc.emc_energy[rcls]>80.) numNeutrals80+=1;
+		       //cout<<" eemc "<<semc.emc_energy[rcls]<<" phiemc  "<<semc.emc_phi[rcls]<<" theta "<<semc.emc_theta[rcls]<<" type "<<semc.emc_type[rcls]<<endl;
+		       Etotn+=semc.emc_energy[rcls];
+		     }
+		  } 
+		/*	for(int emccl=0;emccl<9600;emccl++){
+		  if(semc_data.glkr_energy[emccl]>0.) cout<<" lkr "<<semc_data.glkr_energy[emccl]<<" philkr  "<<semc_data.glkr_phi[emccl]<<" theta "<<semc_data.glkr_theta[emccl]<<endl;
+		  }*/
+  
+		
+		Ptot=0;
+		Px=0;
+		Py=0;
+		Pz=0;
+		Ppz=0;
+		double theta=0, phi=0;
+		nhadr=Ntr+numNeutrals;
+		
+
+	       	MuCosm=0;
+	///	int mubadlist[1024]={1024*0};
+		int MuNhits=0,MuNhits1=0,MuNhits2=0,MuNhits3=0;
+		unsigned short statusMU;
+		short octants[8][4];
+		for(int io=0;io<8;io++) for(int ilm=0;ilm<4;ilm++)  octants[io][ilm]=0;
+
+		unsigned short MuNhitsRaw = mu_next_event_good();
+		HitMu=MuNhitsRaw;
+		//	cout<<"MuNhitsRaw  "<<MuNhitsRaw <<endl;
+		for(unsigned short im = 0; im <MuNhitsRaw ; im ++)
+		  {
+		     unsigned short chm = mu_event.ch[im];        
+		     unsigned short chmt = mu_event.ch[im]-8801;        
+		     statusMU=mu_channel_status(chm);
+		     
+		      if(statusMU == MU_STS_USABLE&&chmt>=0&&chmt<1024)
+		       {
+	//		  cout<<"chmt1:"<<chmt<<"mu_event.ch[im]: "<<mu_event.ch[im]<<endl;
+			  unsigned short layer=0, octant=0;                     
+			  layer =  mu_channel[chmt].layer-1;
+			  if(layer>=0&&layer<3)
+			    {
+			       octant = mu_channel[chmt].octant-1; 
+			       if(octant>=0&&octant<8)
+				 {
+	//			    cout<<"layer:"<<layer<<" octant: "<<octant<<endl;
+				    MuNhits++;
+				    
+				    if(layer==0)  MuNhits1++;
+				    if(layer==1)  MuNhits2++;
+				    if(layer==2)  MuNhits3++;
+				    octants[octant][layer]=1;
+				 }
+			    }
+		       }
+		  }
+		short o2[8];
+		short o3[8];
+		short o1[8];      
+		for(int io=0;io<8;io++)
+		  {
+		     o3[io]=0;        
+		     o2[io]=0;        
+		     o1[io]=0;  
+		     if((octants[io][0]+octants[io][1]+octants[io][2])>=3)  o3[io]=1;    
+		     if((octants[io][0]+octants[io][1]+octants[io][2])>=2)  o2[io]=1;    
+		     if((octants[io][0]+octants[io][1]+octants[io][2])>=1)  o1[io]=1;
+		  }
+		int fc, f1, f2, f3;
+		ncross12=0;ncross11=0;ncross1=0;ncross2=0;ncross3=0;
+		for(int io=0;io<8;io++)
+		  {
+		     f1=io+3;
+		     f2=io+4;
+		     f3=io+5;    
+		     if(f1>=8) f1-=8;
+		     if(f2>=8) f2-=8;
+		     if(f3>=8) f3-=8;     
+		     if(o1[io]&&(o1[f1]||o1[f2]||o1[f3])) ncross11=1;           
+		     if(o2[io]&&(o1[f1]||o1[f2]||o1[f3])) ncross12=1;                   
+		     if(o1[io])  ncross1=1;
+		     if(o2[io])  ncross2=1;
+		     if(o3[io])  ncross3=1;
+		  }
+		if(ncross11==1||ncross3==1){
+		  //kdisplay_event();
+		  MuCosm=1;
+		}
+		//	cout<<ncross12<<" "<<ncross11<<" "<<ncross1<<" "<<ncross2<<" "<<ncross3<<endl;
+		// if(NtrBeam>=2&&NtrIP>=1&&TrkPath==0&&ERun>0&&E>800&&MuCosm==1) {
+		     
+		 //  cout<<"Mu - Cosmic"<<endl;
+		 //  }
+		//cout<<"Run after mu "<<RunZ<<endl;
+		//	 cout<<"------------------Ntr "<<Ntr<<" eTracksAll "<<eTracksAll<<endl;
+
+		for(int k=0;k<6;k++) S[k]=0;
+		double ppp=0;
+		HitVD=kvdrec_.NHITVD;
+		HitDC=kdcrec_.NHIT;
+		NtracksSkip=0;
+		Ntrip=0;
+		for(int t=0;t<Ntr;t++)
+		  {
+		    //   cout<<"Theta "<<TMath::Cos(ktrrec_.TETRAK[t]*Pi/180.)<<" vz "<<tVz(t)<<endl;
+		    Chi2tr[t]=tCh2(t);
+		    Etotc+=sqrt(tP(t)*tP(t)+mpi*mpi);
+
+		     theta=ktrrec_.TETRAK[t]*Pi/180.;
+		     phi=ktrrec_.FITRAK[t]*Pi/180.;
+
+		     X0IP[t]=tX0IP(t);
+		     Y0IP[t]=tY0IP(t);
+		     Z0IP[t]=tZ0IP(t);	
+		     //cout<<"X0IP[t] "<<X0IP[t]<<" Y0IP[t] "<<Y0IP[t]<<" Z0IP[t] "<<Z0IP[t]<<endl;
+
+		     Nhits[t]=tHits(t); 
+		     NhitsVD[t]=tHitsVD(t);
+		     //cout<<"tHits() "<<tHits(t)<<" tHitsVD(t) "<<tHitsVD(t)<<endl;
+
+		     // ntrkch[t]=ntrkch(t);
+		     //  cout<<"ntrkch "<<ntrkch(t)<<"  "<<ntrkchTM(t)<<"  "<<ntrkchnoise(t)<<endl;
+		     // cout<<"trkch "<<trkch(t)<<"  "<<trkchTM(t)<<endl;
+
+		     Ptot+=tP(t);
+		     Px+=tP(t)*sin(theta)*cos(phi);
+		     // cout<<" tr "<<t<<" Px "<<Px<<" P "<<tP(t)<<" theta "<<theta<<" phi "<<phi<<endl;
+		     Py+=tP(t)*sin(theta)*sin(phi);
+		     Pz+=tP(t)*cos(theta);
+		     Ppz+=abs(tP(t)*cos(theta));
+
+		     Charge[t]=tCharge(t);
+		     P[t]=tP(t);
+		     Theta[t]=ktrrec_.TETRAK[t]*Pi/180.;
+		     Phi[t]= ktrrec_.FITRAK[t]*Pi/180.;
+		     Ptr[t]=tPt(t);
+		     
+		     int ii=t+1;
+		     SigmaTheta[t]=dcThetaSigmaHTrack(&ii);
+		     
+		     Double_t phi2=tPhMin(t);
+		     double xx=tXc(t)+tRc(t)*cos(phi2);
+		     double yy=tYc(t)+tRc(t)*sin(phi2);
+		     SigmaPhi[t]=dcPhiSigmaHTrack(&ii,&xx,&yy);
+
+		     vertex[t]=tVertex(t);
+
+		     RxyTr[t]=tDr0(t);
+		     RzTr[t]=tDz0(t);
+		     if(P[t]>60&&abs(RxyTr[t])<1.5&&abs(RzTr[t])<15) Ntrip++;
+		     //   cout<<"TMath::Abs "<<TMath::Abs(RxyTr[t])<<" abs "<<abs(RxyTr[t])<<endl;
+		     // cout<<"tr "<<t<<" vert "<<vertex[t]<<" Rxy "<<RxyTr[t]<<" Rz "<<RzTr[t]<<endl;
+
+		     ndcemc[t]=semc.dc_emc_ncls[t];
+		     E[t]=0.;
+		     for(int k=0;k<ndcemc[t];k++){
+		       int ind=semc.dc_emc_cls[t][k]-1;
+		       E[t]+=semc.emc_energy[ind];
+		     }	 
+		     // cout<<"++++++++++++++Ntr "<<Ntr<<" eTracksAll "<<eTracksAll<<endl;
+		    	     ppp+=tP(t)*tP(t);
+		     S[0]+=tP(t)*tP(t)*sin(theta)*cos(phi)*sin(theta)*cos(phi);
+		     S[1]+=tP(t)*tP(t)*sin(theta)*cos(phi)*sin(theta)*sin(phi);
+		     S[2]+=tP(t)*tP(t)*sin(theta)*cos(phi)*cos(theta);
+		     S[3]+=tP(t)*tP(t)*sin(theta)*sin(phi)*sin(theta)*sin(phi);
+		     S[4]+=tP(t)*tP(t)*sin(theta)*sin(phi)*cos(theta);
+		     S[5]+=tP(t)*tP(t)*cos(theta)*cos(theta);
+
+		     Sg[0]=S[0];
+		     Sg[1]=S[1];
+		     Sg[2]=S[2];
+		     Sg[3]=S[3];
+		     Sg[4]=S[4];
+		     Sg[5]=S[5];
+
+		     if(MuCosm==0&&(P[t]>ERun||RxyTr[t]>5.)&&(E[t]==0||E[t]>ERun)) NtracksSkip++;
+		  }
+		
+	      	for(int k=0;k<6;k++) S[k]=S[k]/ppp;
+		
+		TMatrix PM1(3,3);
+		PM1[0][0]=S[0];
+		PM1[0][1]=S[1];
+		PM1[0][2]=S[2];
+		PM1[1][0]=S[1];
+		PM1[1][1]=S[3];
+		PM1[1][2]=S[4];
+		PM1[2][0]=S[2];
+		PM1[2][1]=S[4];
+		PM1[2][2]=S[5];
+		TVector   EV1=TVector(3);
+		TMatrix   AM1=PM1.EigenVectors(EV1);     
+		L[0]=EV1[0];
+		L[1]=EV1[1];
+		L[2]=EV1[2];
+		//	cout<<" EV1 "<<EV1[0]<<" EV2 "<<EV1[1]<<" EV3 "<<EV1[2]<<" sum "<<EV1[0]+EV1[1]+EV1[2]<<endl;
+
+		int ncl=0;
+
+		for(int j=Ntr;j<nhadr;j++){
+		  Charge[j]=0;
+		  //    cout<<"j "<<j<<" ncl "<<ncl<<endl;
+		  for(int cl=ncl; cl < semc.emc_ncls;cl++)
+		    {
+		      // cout<<"cl "<<cl<<"  "<<semc.emc_dc_ntrk[cl]<<endl;
+		      if(semc.emc_dc_ntrk[cl]==0){ 
+			ncl=cl+1;
+			E[j]=semc.emc_energy[cl];
+			Phi[j]=semc.emc_phi[cl]*Pi/180.;
+			Theta[j]=semc.emc_theta[cl]*Pi/180.;
+			SigmaPhi[j]=semc.emc_dphi[cl]*Pi/180.;
+			SigmaTheta[j]=semc.emc_dtheta[cl]*Pi/180.;
+			P[j]=E[j];
+			Ptr[j]=E[j]*cos(Theta[j]);
+
+			Px+=P[j]*sin(Theta[j])*cos(Phi[j]);
+			//	cout<<"gamma "<<j<<" Px "<<Px<<" E "<<E[j]<<" th "<<Theta[j]<<" phi "<<Phi[j]<<" sin "<<sin(Theta[j])<<" cos "<<cos(Phi[j])<<endl;
+			Py+=P[j]*sin(Theta[j])*sin(Phi[j]);
+			Pz+=P[j]*cos(Theta[j]);
+
+			ppp+=P[j]*P[j];
+			/*	Sg[0]+=P[j]*P[j]*sin(Theta[j])*cos(Phi[j])*sin(Theta[j])*cos(Phi[j]);
+			Sg[1]+=P[j]*P[j]*sin(Theta[j])*cos(Phi[j])*sin(Theta[j])*sin(Phi[j]);
+			Sg[2]+=P[j]*P[j]*sin(Theta[j])*cos(Phi[j])*cos(Theta[j]);
+			Sg[3]+=P[j]*P[j]*sin(Theta[j])*sin(Phi[j])*sin(Theta[j])*sin(Phi[j]);
+			Sg[4]+=P[j]*P[j]*sin(Theta[j])*sin(Phi[j])*cos(Theta[j]);
+			Sg[5]+=P[j]*P[j]*cos(Theta[j])*cos(Theta[j]);*/
+		      }
+		      if(ncl==cl+1) break;
+		    }
+		  //cout<<" E "<<E[j]<<endl;
+		}
+
+		/*	for(int k=0;k<6;k++) Sg[k]=Sg[k]/ppp;
+		TMatrix PM2(3,3);
+		PM2[0][0]=Sg[0];
+		PM2[0][1]=Sg[1];
+		PM2[0][2]=Sg[2];
+		PM2[1][0]=Sg[1];
+		PM2[1][1]=Sg[3];
+		PM2[1][2]=Sg[4];
+		PM2[2][0]=Sg[2];
+		PM2[2][1]=Sg[4];
+		PM2[2][2]=Sg[5];
+		TVector   EV2=TVector(3);
+		TMatrix   AM2=PM2.EigenVectors(EV2);     
+		Lg[0]=EV2[0];
+		Lg[1]=EV2[1];
+		Lg[2]=EV2[2];*/
+		//	cout<<"ggg  EV1 "<<EV2[0]<<" EV2 "<<EV2[1]<<" EV3 "<<EV2[2]<<" sum "<<EV2[0]+EV2[1]+EV2[2]<<endl;
+		itr1=0;
+		for(int t=0; t<eTracksAll; t++)
+		  {
+		    TrArray[t]=0;
+		    if(tP(itr1)<=tP(t)) itr1=t;
+		    //   cout<<" p "<<tP(t)<<endl;
+		  }
+		itr2 = 0;
+		if(itr1==0&&eTracksAll>1) itr2=1;
+		for(int tt=0; tt<eTracksAll; tt++)
+		  {		  
+		    if(tP(itr2)<tP(tt)&&tt!=itr1) itr2=tt;
+		  }
+		//	cout<<tP(it1)<<"   "<<tP(it2)<<endl;
+		cosxy1=(tVx(itr1)*tVx(itr2)+tVy(itr1)*tVy(itr2))
+		  /sqrt(tVx(itr1)*tVx(itr1)+tVy(itr1)*tVy(itr1))
+		  /sqrt(tVx(itr2)*tVx(itr2)+tVy(itr2)*tVy(itr2));
+		P1=tP(itr1);
+		if(eTracksAll==1) P2=0;
+		else if(eTracksAll>1) P2=tP(itr2);
+
+		TrkPath=0;
+		cosxy=(tVx(0)*tVx(1)+tVy(0)*tVy(1))
+		  /sqrt(tVx(0)*tVx(0)+tVy(0)*tVy(0))
+		  /sqrt(tVx(1)*tVx(1)+tVy(1)*tVy(1));
+		cosz=tVx(0)*tVx(1)+tVy(0)*tVy(1)+tVz(0)*tVz(1);
+		if(eTracksAll==2)
+		  {
+		    // cosxy=(tVx(0)*tVx(1)+tVy(0)*tVy(1))
+		    //  /sqrt(tVx(0)*tVx(0)+tVy(0)*tVy(0))
+		    //  /sqrt(tVx(1)*tVx(1)+tVy(1)*tVy(1));
+		    //cosz=tVx(0)*tVx(1)+tVy(0)*tVy(1)+tVz(0)*tVz(1);
+		    if(cosxy<-0.95){
+		      TrkPath=1;
+		    }
+		  }
+		//cout<<"==============Ntr "<<Ntr<<" eTracksAll "<<eTracksAll<<endl;
+		NTrJet=0;
+		//	cout<<" eTracksAl "<<eTracksAll<<" eVertexZ "<<eVertexZ<<endl;
+		for(int it1=0; it1<eTracksAll; it1++)
+		  {
+
+		    // cout<<tZ0(it1)<<"  "<<tZ0IP(it1)<<endl;
+
+		    double Rmax=sqrt(tX2(it1)*tX2(it1)+tY2(it1)*tY2(it1));
+		    double rxy=sqrt(tX0(it1)*tX0(it1)+tY0(it1)*tY0(it1));
+		    if(Rmax>25&&rxy<5.&&tP(it1)>60.)
+		      {
+			for(int it2=it1; it2<eTracksAll; it2++)
+			  {
+			    if(it2!=it1&&TrArray[it1]==0)
+			      {
+				CosArray[it1][it2]=(tVx(it1)*tVx(it2)+tVy(it1)*tVy(it2))
+				  /sqrt(tVx(it1)*tVx(it1)+tVy(it1)*tVy(it1))/sqrt(tVx(it2)*tVx(it2)+tVy(it2)*tVy(it2));
+				CosArrayZ[it1][it2]=tVz(it1)*tVz(it2);
+				if(CosArray[it1][it2]>0.9&&CosArrayZ[it1][it2]>0.5) 
+				  {
+				    TrArray[it2]=-1;
+				  }
+			      }
+			  }
+		      }
+		    else
+		      {
+			TrArray[it1]=-1;
+		      }
+		  }
+
+		for(int it1=0; it1<eTracksAll; it1++)
+		  {
+		     if(TrArray[it1]==0) NTrJet++;
+		  }
+		Ngamma=0;
+		ng=0;
+		for(int cl=0; cl < Nemc;cl++)
+		  {
+		    type[cl]=semc.emc_type[cl];
+		    //cout<<"type "<<type[cl]<<endl;
+		    energy[cl]=semc.emc_energy[cl];
+		    zemc[cl]=semc.emc_z[cl];
+		    xemc[cl]=semc.emc_x[cl];
+		    yemc[cl]=semc.emc_y[cl];
+		    phiemc[cl]=semc.emc_phi[cl]*Pi/180.;
+		    thetaemc[cl]=semc.emc_theta[cl]*Pi/180.;
+		    dphiemc[cl]=semc.emc_dphi[cl]*Pi/180.;
+		    dthetaemc[cl]=semc.emc_dtheta[cl]*Pi/180.;
+		    drhoemc[cl]=semc.emc_drho[cl];
+		    phiemc_str[cl]=semc.emc_phi_str[cl]*Pi/180.;
+		    thetaemc_str[cl]=semc.emc_theta_str[cl]*Pi/180.;
+		    nemcdc[cl]=semc.emc_dc_ntrk[cl];
+
+		    if(energy[cl]>100) Ngamma++;
+		    if(nemcdc[cl]==0&&energy[cl]>100) ng++;
+		  }
+
+		i1=0,i2=1;
+		double de=energy[0];
+		for(int j=0;j<Nemc;j++){
+		  if(energy[j]>=de){
+		    de=energy[j];
+		    i1=j;
+		  }
+		}
+		for(int jj=0;jj<Nemc;jj++){
+		  if(energy[jj]>=de&&jj!=i1){
+		    de=energy[jj];
+		    i2=jj;
+		  }
+		}
+		nee=0;
+		if(energy[i1]>1000&&energy[i2]>800&&cos(phiemc[i1]-phiemc[i2])<-0.9) nee+=1;
+		if(P[itr1]>1000.&&cos(Phi[itr1]-Phi[itr2])<-0.96&&P[itr2]>800&&cos(Theta[itr1]+Theta[itr2])<-0.9) nee+=2;
+		
+                  EnTwo=0;
+                  double pe1=sqrt(P1*P1+mpi*mpi);
+                  double pe2=sqrt(P2*P2+mpi*mpi);
+                  for(int cl1=0; cl1 < semc.emc_ncls;cl1++)
+                  {
+		    if(semc.emc_dc_ntrk[cl1]==0&&semc.emc_energy[cl1]>pe1) pe1=semc.emc_energy[cl1];
+		  } 
+                  for(int cl2=0; cl2 < semc.emc_ncls;cl2++)
+                  {
+		    if(semc.emc_dc_ntrk[cl2]==0&&semc.emc_energy[cl2]>pe2&&semc.emc_energy[cl2]<pe1) pe2=semc.emc_energy[cl2];
+		  } 
+                  EnTwo=pe1+pe2;
+
+
+		for(int ip=0;ip<128;ip++)  itofq[ip]=0; 
+		for(int it=0;it<kscBhit_.nDCtracks;it++)
+		  {
+		    if(kscBhit_.ntof[it]>0)
+		      {
+			for(int ic=0;ic<kscBhit_.ntof[it];ic++)
+			  {
+			    int numpmtl=kscBhit_.numPmt_l[it][ic];   
+			    int numpmtr=kscBhit_.numPmt_r[it][ic]; 
+			    int numb=kscBhit_.number_B[it][ic];
+			    tof[it]=kscBhit_.ToFhit[it][ic];
+			    if(numpmtl){
+			      tof1l[it]=kscBhit_.time_BL_ns[it][ic]; 
+			      tof1l_st[it]=kscBhit_.status_l[it][ic]; 
+			      tof1l_n[it]=numpmtl;
+			      tof1l_ampl[it]=kscBhit_.amp_mev_l[it][ic];
+			    } 
+			    if(numpmtr){
+			      tof1r[it]=kscBhit_.time_BR_ns[it][ic];  
+			      tof1r_st[it]=kscBhit_.status_r[it][ic]; 
+			      tof1r_n[it]=numpmtr;
+			      tof1r_ampl[it]=kscBhit_.amp_mev_r[it][ic];
+			    }
+			    if(numb){
+			      tof1b_n[it]=numb;
+			      tof1b_ampl[it]=kscBhit_.time_B_ns[it][ic]; 
+			      tof1b_sig[it]=kscBhit_.time_B_sig[it][ic]; 
+			      //cout<<"barel track "<<it<<" time "<<tof1b_ampl[it]<<" 1 "<<kscBhit_.time_B_ns1[it][ic]<<" 2 "<<kscBhit_.time_B_ns2[it][ic]<<endl;
+			      //cout<<"barel r "<<kscBhit_.time_BR_ns[it][ic]<<" L "<<kscBhit_.time_BL_ns[it][ic]<<endl;
+			    }
+			    
+			    if(tof1l[it]!=0&&!isnan(tof1l[it])&&itofq[numpmtl]==0&&tof1l[it]!=-700) 
+			      {
+				itofq[numpmtl]=1;
+			      }
+			    if(tof1r[it]!=0&&!isnan(tof1r[it])&&itofq[numpmtr]==0&&tof1r[it]!=-700) 
+			      {
+				itofq[numpmtr]=1;
+			      }
+			  }
+		      }
+		  }
+
+	NtofHits=kschit_.nScHits;
+
+	Nsc=ktof_cb_.Nsc;
+	for(int ik=0;ik<Nsc;ik++){
+	  SC[ik]=ktof_cb_.SC[ik];
+	  scAmpl[ik]=ktof_cb_.Ampl[ik];
+	  scTime[ik]=ktof_cb_.Time[ik];
+	}
+
+		int ind1=0, ind2=0, ind3=0;
+		E1=0.,E2=0.;
+		for(int k=0;k<Nemc;k++){
+		  //	  cout<<k<<" type "<<type[k]<<" energy "<<energy[k]<<" zemc "<<zemc[k]<<" phiemc "<<phiemc[k]<<" thetaemc "<<thetaemc[k]<<" nemcdc "<<nemcdc[k]<<endl;
+		  if(energy[k]>E1) {
+		    E1=energy[k];
+		    ind1=k;
+		  }
+		}
+		for(int k2=0;k2<Nemc;k2++){
+		  if(energy[k2]>E2&&k2!=ind1) {
+		    E2=energy[k2];
+		    ind2=k2;
+		  }
+		}
+	
+		dphi=TMath::Max(phiemc[ind1],phiemc[ind2])-TMath::Min(phiemc[ind1],phiemc[ind2])-Pi;
+		dtheta=thetaemc[ind1]+thetaemc[ind2]-Pi;
+
+		Et=Eemc;
+		for(int et=0;et<Ntr;et++){
+		  if(semc.dc_emc_ncls[et]==0) Et+=sqrt(19479.78+tP(et)*tP(et));
+		  }
+		/*
+		int Ngamma=0;
+		for(int cl=0;cl<Nemc;cl++) {
+		  if(energy[cl]>120.) Ngamma++;
+		}
+		
+		int NgDphi=0, Ntrip=0,ng=0,NtrR=0, NtrZ=0;
+		double cosPhiMx=-2.;
+		for(int cl=0;cl<Nemc;cl++)
+		  {
+		     if(nemcdc[cl]==0&&(energy[cl]>120||energy[cl]>60&&cos(thetaemc[cl])>0.8)) 
+		       	{
+			   
+			   ng++;
+			   cosPhiMx=-2;
+			   for(int tr=0;tr<Ntr;tr++)
+			     {
+				
+				double cosPhi=cos(Phi[tr])*cos(phiemc[cl])+sin(Phi[tr])*sin(phiemc[cl]);
+				if(cosPhi>cosPhiMx) cosPhiMx=cosPhi;
+			    }
+			  
+			   if(cosPhiMx>-2&&cosPhiMx<0.94) NgDphi+=1;
+			}
+		     
+		  }
+		
+		for(int tr=0;tr<Ntr;tr++)
+		  {
+		     
+		  if(P[tr]>100&&P[tr]<2000&&TMath::Abs(cos(Theta[tr]))<0.9) Ntrip++;
+		  if(TMath::Abs(RxyTr[tr])<2.0&&P[tr]>10&&P[tr]<2000) NtrR++;
+		  if(TMath::Abs(RxyTr[tr])<2.0&&TMath::Abs(RzTr[tr])<13.&&P[tr]>10&&P[tr]<2000) NtrZ++;
+		  }
+		
+
+		int c1,c2,c3,c4,c5,c6,c7,c8;
+		c1=c2=c3=c4=c5=c6=c7=c8=0;
+		if(NtrR>2&&NtrZ>1&&Eemc>600) c1=1;
+		if(NtrR>1&&NtrZ>0&&(ng+Ntrip)>=3&&NgDphi>=1&&Eemc>600&&1.5*(L[1]+L[2])>0.05) c2=1;
+		int Nreport=10;
+		kedrsepbeams_(&Nreport,&c1,&c2,&c3,&c4,&c5,&c6,&c7,&c8);          
+		int   nbins=250;
+		float vmin=-50.;
+		float vmax=50.;
+		int   id=100;
+		int   pawcsize=30000;
+		float zchi2=0;
+		kedrsepbeams_hist_(&pawcsize,&id,&zchi2,&nbins,&vmin,&vmax);*/
+
+	       
+		//   	if(Ncosmic==0&&NtrIP>0&&Etotn+Etotc>1500&&EnTwo/(Etotn+Etotc)<0.99&&nee==0){*/
+	
+
+		if(DrawCuts>0){
+		  double S[6]={0.,0.,0.,0.,0.,0.};
+		  double Lp[3]={0.,0.,0.};
+		  double sumP=0.;
+		  int Ntrip=0;
+		  for(int tr=0;tr<Ntr;tr++){
+		    sumP+=P[tr];
+		    if(Ptr[tr]>100&&TMath::Abs(RxyTr[tr])<1.5&&TMath::Abs(RzTr[tr])<15) Ntrip++;
+		    
+		    if(Ptr[tr]>60){   //&&P[tr]<3000){ //&&TMath::Abs(cos(Theta[tr]))<0.9){
+		      //if(P[tr]>100&&P[tr]<2000&&TMath::Abs(cos(Theta[tr]))<0.9){
+		      ppp+=P[tr]*P[tr];
+		      S[0]+=P[tr]*P[tr]*sin(Theta[tr])*cos(Phi[tr])*sin(Theta[tr])*cos(Phi[tr]);
+		      S[1]+=P[tr]*P[tr]*sin(Theta[tr])*cos(Phi[tr])*sin(Theta[tr])*sin(Phi[tr]);
+		      S[2]+=P[tr]*P[tr]*sin(Theta[tr])*cos(Phi[tr])*cos(Theta[tr]);
+		      S[3]+=P[tr]*P[tr]*sin(Theta[tr])*sin(Phi[tr])*sin(Theta[tr])*sin(Phi[tr]);
+		      S[4]+=P[tr]*P[tr]*sin(Theta[tr])*sin(Phi[tr])*cos(Theta[tr]);
+		      S[5]+=P[tr]*P[tr]*cos(Theta[tr])*cos(Theta[tr]);
+		    }
+		  }
+		  if(ppp>0){
+		    for(int k=0;k<6;k++) S[k]=S[k]/ppp;
+		    
+		    TMatrix PM1(3,3);
+		    PM1[0][0]=S[0];
+		    PM1[0][1]=S[1];
+		    PM1[0][2]=S[2];
+		    PM1[1][0]=S[1];
+		    PM1[1][1]=S[3];
+		    PM1[1][2]=S[4];
+		    PM1[2][0]=S[2];
+		    PM1[2][1]=S[4];
+		    PM1[2][2]=S[5];
+		    TVector   EV1=TVector(3);
+		    TMatrix   AM1=PM1.EigenVectors(EV1);     
+		    Lp[0]=EV1[0];
+		    Lp[1]=EV1[1];
+		    Lp[2]=EV1[2];
+		  }
+		  /*if(MuCosm==0&&Eemc>700&&Eemc<2500&&1.5*(Lp[1]+Lp[2])>0.05&&TrigArg[6]>0&&PTMSK>0){
+		    cout<<"eDaq "<<eDaq<<endl;
+		    cout<<" Ntr "<<Ntr<<" numNeutr "<<numNeutrals<<" Ncosm "<<Ncosmic<<endl;
+		    cout<<"Etot "<<Etotn+Etotc<<" EnTwo/EnTot "<<EnTwo/(Etotn+Etotc)<<endl;	    cout<<"NtofHits "<<NtofHits<<" Nsc1f "<<Nsc1f<<endl;
+		
+		    kdisplay_event();   
+		    }*/
+
+		
+		}
+		//////////////for eff1trk////////////////
+		/*	double en1=500,en2=500;
+		int iind1=0,iind2=0;
+		for(int i=0;i<Nemc;i++){
+		  if(energy[i]>en1&&nemcdc[i]>0){
+		    en1=energy[i];
+		    iind1=i;
+		  }
+		}
+		for(int i=0;i<Nemc;i++){
+		  if(energy[i]>en2&&i!=iind1&&nemcdc[i]>0){
+		    en2=energy[i];
+		    iind2=i;
+		  }
+		}
+		if(HitMu==0&&en1>500&&en2>500&&(en1+en2)>0.9*2.*ERun&&(thetaemc[iind1]>0.5&&thetaemc[iind1]<2.64)&&(thetaemc[iind2]>0.5&&thetaemc[iind2]<2.64)&&cos(thetaemc[iind1]+thetaemc[iind2])<-0.9&&cos(phiemc[iind1]-phiemc[iind2])<-0.95){
+		  cout<<"eDaq "<<eDaq<<endl;
+		  cout<<"type "<<type[iind1]<<" "<<type[iind2]<<endl;
+		  cout<<"thetaemc "<<thetaemc[iind1]<<" "<<thetaemc[iind2]<<endl;
+		  
+		   kdisplay_event();
+		   }*/
+
+		/////////hadrsel//////////////////
+double FWM=0,H2=0,H0=0.;
+ for(int tr=0;tr<nhadr;tr++){
+   for(int tr1=0;tr1<nhadr;tr1++){
+     if(Ptr[tr]>0&&Ptr[tr1]>0){
+       H0+=P[tr1]*P[tr];
+       double costh=sin(Theta[tr1])*cos(Phi[tr1])*sin(Theta[tr])*cos(Phi[tr])+sin(Theta[tr1])*sin(Phi[tr1])*sin(Theta[tr])*sin(Phi[tr])+cos(Theta[tr1])*cos(Theta[tr]);
+       H2+=P[tr1]*P[tr]*pl2(costh);
+     }
+   }
+ }
+ // cout<<"H0 "<<H0<<" H2 "<<H2<<endl;
+   if(H0>0) FWM=H2/H0;
+
+int Ntrip=0, Ntrip2=0, l1=-1,l2=-1;
+     for(int t=0;t<Ntr;t++){
+       // if(TMath::Abs(RxyTr[t])<0.5&&TMath::Abs(RzTr[t])<13.&&Ptr[t]>100.){
+       if(TMath::Abs(RxyTr[t])<2.5&&TMath::Abs(RzTr[t])<13.&&Ptr[t]>60.){  
+       Ntrip++;
+	 if(l1==-1) l1=t;
+	 if(l1!=-1) l2=t;
+       }
+       if(TMath::Abs(RxyTr[t])<0.5&&TMath::Abs(RzTr[t])<13.&&Ptr[t]>100.) Ntrip2++;
+     }
+TLorentzVector V1,V2;
+     double eta1=-TMath::Log(TMath::Tan(Theta[l1]*0.5)) ;
+     V1.SetPtEtaPhiM(Ptr[l1],eta1, Phi[l1],139.57);
+     double eta2=-TMath::Log(TMath::Tan(Theta[l2]*0.5)) ;
+     V2.SetPtEtaPhiM(Ptr[l2],eta2, Phi[l2],139.57);
+     double mll=(V1+V2).M();       
+ double Ecal=0., Elkr=0., E1g=0.;
+     for(int cl=0; cl < Nemc;cl++)
+       {
+	 Ecal+=energy[cl];
+	 if(type[cl]==1) Elkr+=energy[cl];
+	 if (nemcdc[cl]==0&&energy[cl]>E1g) E1g=energy[cl];
+       }
+   //mean tof time for all event
+       int ntoftr=0;
+     double toft=0, meantof=0.;
+     for(int i=0;i<Ntr;i++){
+       if(tof1r_st[i]==0){
+	 if(TMath::Abs(tof1r[i])<50.&&tof1r[i]!=0){
+	   if(tof1l_st[i]==0&&TMath::Abs(tof1l[i])<50.&&tof1l[i]!=0){
+	     ntoftr++;
+	     toft+=0.5*(tof1r[i]+tof1l[i]);
+	     }
+	   else{
+	     ntoftr++;
+	     toft+=tof1r[i];
+	   }
+	 }
+       }
+       if(tof1l_st[i]==0){
+	 if(TMath::Abs(tof1l[i])<50.&&tof1l[i]!=0&&(tof1r_st[i]!=0||TMath::Abs(tof1r[i])>50.||tof1r[i]==0)){
+	   ntoftr++;
+	   toft+=tof1l[i];
+	 }
+       }
+       if(TMath::Abs(tof1b_ampl[i])<50.&&tof1b_ampl[i]!=0){
+	 ntoftr++;
+	 toft+=tof1b_ampl[i];
+       }
+     }
+     if(ntoftr>0) meantof=toft/ntoftr;
+
+     /*if(MuCosm==0&&Eemc>500&&Eemc<2500&&TrigArg[6]>0&&PTMSK>0&&Ntrip>0&&FWM<0.9&&HitVD<55&&Elkr/Ecal>0.15&&(HitMu==0||(TMath::Abs(meantof)<10.&&meantof!=0))){
+  cout<<"eDaq "<<eDaq<<endl;
+
+ if(Ntrip==2 &&Ntr==2&& TMath::Min(E[l1]/P[l1],E[l2]/P[l2])<0.25){
+  // if(Ntrip==2&&mll>1500.){ //&&TMath::Min(Ptr[l1],Ptr[l2])>500.) {
+       //     if(Ntrip!=2||TMath::Min(Ptr[l1],Ptr[l2])<500.) 
+     //if(Ntrip==2 && TMath::Min(Ptr[l1],Ptr[l2])>500.){
+   cout<<"E/p " <<E[l1]/P[l1]<<" "<<E[l2]/P[l2]<<endl;
+   kdisplay_event();
+    }
+    }*/
+
+ double en1=500,en2=500;
+  int ind1e=0,ind2e=0;
+  for(int i=0;i<Nemc;i++){
+    if(energy[i]>en1&&nemcdc[i]>0){
+      en1=energy[i];
+      ind1e=i;
+    }
+  }
+  for(int i=0;i<Nemc;i++){
+    if(energy[i]>en2&&i!=ind1e&&nemcdc[i]>0){
+      en2=energy[i];
+      ind2e=i;
+    }
+  }
+ if(HitMu==0&&en1>500&&en2>500&&(en1+en2)>0.9*2.*ERun&&(thetaemc[ind1e]>0.5&&thetaemc[ind1e]<2.64)&&(thetaemc[ind2e]>0.5&&thetaemc[ind2e]<2.64)&&cos(thetaemc[ind1e]+thetaemc[ind2e])<-0.9&&cos(phiemc[ind1e]-phiemc[ind2e])<-0.95){
+int nn=0;
+for(int n=0;n<Ntr;n++){
+  
+      //(eDaq==15245||eDaq==176058)&&
+      if(P[n]>60.&&((cos(thetaemc[ind1]+Theta[n])<-0.9&&cos(phiemc[ind1]-Phi[n])<-0.95)||(cos(thetaemc[ind2]+Theta[n])<-0.9&&cos(phiemc[ind2]-Phi[n])<-0.95))){
+	nn++;
+      }
+
+    }
+//if(nn!=2) kdisplay_event();
+ }
+  double thcut1=0.72, thcut2=2.42;
+  int NThetaBins=8;
+  double dth1=(thcut2-thcut1)/NThetaBins;
+
+int nemc2=0;
+  int clemc[10];
+  double enemc2[10],sumenemc=0.;
+  for(int cl=0; cl < Nemc;cl++){
+    if(energy[cl]>700.){
+      clemc[nemc2]=cl;
+      enemc2[nemc2]=energy[cl];
+      nemc2++;
+    }
+  }
+  if(nemc2>1) {
+  //if(nemc2==2&&(enemc2[0]+enemc2[1])>2000.&&(enemc2[0]+enemc2[1])>0.9*Eemc3){
+    int n40=0, n80=0;
+    for(int cl=0; cl < Nemc;cl++){
+      if(cl!=clemc[0]&&cl!=clemc[1]&&energy[cl]>40.) n40++;
+      if(cl!=clemc[0]&&cl!=clemc[1]&&energy[cl]>80.) n80++;
+    }
+    int ccl1=clemc[0];
+    int ccl2=clemc[1];
+    // double dph=TMath::Max(phiemc[ccl1],phiemc[ccl2])-TMath::Min(phiemc[ccl1],phiemc[ccl2])-Pi;
+    double dph=TMath::Abs(phiemc[ccl1]-phiemc[ccl2])-Pi;
+    double dth=thetaemc[ccl1]+thetaemc[ccl2]-Pi;
+
+
+    double minh=0.4,minh2=0.4,thdc[2],phdc[2];
+    for(int n=0;n<Ntr;n++){
+      if(TMath::Abs(thetaemc[ccl1]-Theta[n])<minh){
+        thdc[0]=Theta[n];
+        phdc[0]=Phi[n];
+        minh=TMath::Abs(thetaemc[ccl1]-Theta[n]);
+      }
+    }
+    for(int n=0;n<Ntr;n++){
+      if(TMath::Abs(thetaemc[ccl2]-Theta[n])<minh2){
+        thdc[1]=Theta[n];
+        phdc[1]=Phi[n];
+        minh2=TMath::Abs(thetaemc[ccl1]-Theta[n]);
+      }
+    }
+    double dphdc=TMath::Abs(phdc[0]-phdc[1])-Pi;
+    double dthdc=thdc[0]+thdc[1]-Pi;
+
+
+
+    int idcemc=0;
+    for(int l=0;l<Ntr;l++){
+      
+      if(ndcemc[l]>0&&TMath::Abs(RxyTr[l])<0.75&&TMath::Abs(RzTr[l])<13.) idcemc++;
+    }
+
+	double Nemcdc=0;
+		for(int cl=0; cl < Nemc;cl++)
+		  {
+		    if(energy[cl]>60.&&nemcdc[cl]==0) Nemcdc++;
+		  }
+		if(nevt%1000==0) cout<<"Events proceed "<<nevt<<endl;
+		cout<<"eDaq "<<eDaq<<endl;
+		cout<<"H2/H0 "<<FWM<<" MuCosm "<<MuCosm<<" Eemc "<<Eemc<<" trig "<<TrigArg[3]<<" PTMSK "<<PTMSK<<" lkr/emc "<<Elkr/Eemc<<" npart "<<(Ntrip+Nemcdc)<<" Ntrip2 "<<Ntrip2<<endl;
+		for(int t=0;t<Ntr;t++) cout<<"rxy "<<RxyTr[t]<<" z "<<RzTr[t]<<" pt "<<Ptr[t]<<endl;
+		for(int cl=0; cl < Nemc;cl++) cout<<" Eg "<<energy[cl]<<" dc  "<<nemcdc[cl]<<endl; 
+
+			 if(nemc2==2&&(enemc2[0]+enemc2[1])>2000.&&n40<=3&&n80<=2&&((thetaemc[ccl1]>thcut1&&thetaemc[ccl1]<thcut2)||(thetaemc[ccl2]>thcut1&&thetaemc[ccl2]<thcut2))&&TMath::Abs(dth)<0.26&&TMath::Abs(dph)<0.26&&PTMSK>0&&TrigArg[3]>0&&Eemc-(enemc2[0]+enemc2[1])<0.1*2*ERun&&1.5*(L[1]+L[2])<0.05&&MuCosm==1){
+		//	if(nemc2==2&&n40<=3&&n80<=2&&(enemc2[0]+enemc2[1])>2000.&&((thetaemc[ccl1]>thcut1&&thetaemc[ccl1]<thcut2)||(thetaemc[ccl2]>thcut1&&thetaemc[ccl2]<thcut2))&&TMath::Abs(dth)<0.26&&TMath::Abs(dph)<0.26&&PTMSK>0&&TrigArg[3]>0&&1.5*(L[1]+L[2])1.5*(L[1]+L[2])<0.05){
+		//		if(eDaq==15013||(FWM<0.9&&MuCosm==0&&Eemc>700&&Eemc<2500&&TrigArg[3]>0&&PTMSK>0&&Elkr/Eemc>0.15&&(Ntrip+Nemcdc)>2&&Ntrip2>0)){
+		//	if(MuCosm==0&&Eemc>700&&Eemc<2500&&1.5*(L[1]+L[2])>0.05&&Ntr>2){
+			   cout<<"eDaq "<<eDaq<<" sph "<<1.5*(L[1]+L[2])<<" fwm "<<FWM<<endl;
+		  cout<<" Ntr "<<Ntr<<" numNeutr "<<numNeutrals<<" Ncosm "<<Ncosmic<<endl;
+		  cout<<"Etot "<<Etotn+Etotc<<" EnTwo/EnTot "<<EnTwo/(Etotn+Etotc)<<endl;
+		  kdisplay_event();
+		  }
+			 //	 kdisplay_event();
+		///////////////for ee cuts////////////
+		/*  	double dph=-10.;
+		double dthe=-10.;
+		int ind[10];
+		int ttr=0;
+		int Ntrip=0;
+		cout<<"Ntr "<<Ntr<<endl;
+		for(int tr=0;tr<Ntr;tr++){
+		  if(Ptr[tr]>100.&&TMath::Abs(RxyTr[tr])<2.){
+		    Ntrip++;
+		    ind[ttr]=tr;
+		    ttr++;
+		    cout<<"ttr "<<ttr<<" Ptr[tr] "<<Ptr[tr]<<endl;
+		  }
+		}
+		int ind11=ind[0];
+		int ind21=ind[1];
+		double ThMin=0.7,ThMax=Pi-0.7;
+
+		if(Ntrip>1){
+	       	  dph=TMath::Max(Phi[ind11],Phi[ind21])-TMath::Min(Phi[ind11],Phi[ind21])-Pi;
+		  dthe=Theta[ind11]+Theta[ind21]-Pi;
+		  }
+		if(Ntrip==2&&(Charge[ind11]+Charge[ind21])==0&&(E[ind11]+E[ind21])>2000.&&(E[ind11]+E[ind21])>0.95*Eemc&&TMath::Abs(dthe)<0.6&&TMath::Abs(dph)<0.6&&PTMSK>0&&TrigArg[3]>0){
+		   //&&((thetaemc[ind1]>ThMin&&thetaemc[ind1]>ThMax)||(thetaemc[ind2]>ThMin&&thetaemc[ind2]>ThMax))){ 
+		  cout<<"eDaq "<<eDaq<<endl;
+		  cout<<"type "<<type[ind1]<<" "<<type[ind2]<<endl;
+		  cout<<"thetaemc "<<thetaemc[ind1]<<" "<<thetaemc[ind2]<<endl;
+		  NCutEE++;
+		   kdisplay_event();
+		}*/
+
+  int nemc2=0;
+  int clemc[10];
+  double enemc2[10],sumenemc=0.;
+  for(int cl=0; cl < Nemc;cl++){
+    if(energy[cl]>450.){
+      clemc[nemc2]=cl;
+      enemc2[nemc2]=energy[cl];
+      nemc2++;
+    }
+  }
+  if(nemc2>1) {
+  //if(nemc2==2&&(enemc2[0]+enemc2[1])>2000.&&(enemc2[0]+enemc2[1])>0.9*Eemc3){
+    int n40=0, n80=0;
+    for(int cl=0; cl < Nemc;cl++){
+      if(cl!=clemc[0]&&cl!=clemc[1]&&energy[cl]>40.) n40++;
+      if(cl!=clemc[0]&&cl!=clemc[1]&&energy[cl]>80.) n80++;
+    }
+    int ccl1=clemc[0];
+    int ccl2=clemc[1];
+    // double dph=TMath::Max(phiemc[ccl1],phiemc[ccl2])-TMath::Min(phiemc[ccl1],phiemc[ccl2])-Pi;
+    double dph=TMath::Abs(phiemc[ccl1]-phiemc[ccl2])-Pi;
+    double dth=thetaemc[ccl1]+thetaemc[ccl2]-Pi;
+    int idcemc=0;
+    for(int l=0;l<Ntr;l++){
+      
+      if(ndcemc[l]>0&&TMath::Abs(RxyTr[l])<0.75&&TMath::Abs(RzTr[l])<13.) idcemc++;
+    }
+double thcut1=0.72, thcut2=2.42;
+  int NThetaBins=4;
+  double dth1=(thcut2-thcut1)/NThetaBins;
+ if(nemc2==2&&(enemc2[0]+enemc2[1])>2000.&&n40<=3&&n80<=2&&((thetaemc[ccl1]>thcut1&&thetaemc[ccl1]<thcut2)||(thetaemc[ccl2]>thcut1&&thetaemc[ccl2]<thcut2))&&TMath::Abs(dth)<0.12&&TMath::Abs(dph)<0.314&&Eemc-(enemc2[0]+enemc2[1])<0.2*2*ERun&&1.5*(L[1]+L[2])<0.05&&HitVD<55){
+   // kdisplay_event();
+   Nee++;
+   eff_PTMSK+=PTMSK;
+   eff_PTMSK_dn_csi2+=PTMSK_dn_csi2;
+   eff_PTMSK_dn_lkr+=PTMSK_dn_lkr;
+   eff_PTMSK_dn_csi2lkr+=PTMSK_dn_lkr*PTMSK_dn_csi2;
+   eff_PTMSK_kl_csi2+=PTMSK_kl_csi2;
+   eff_PTMSK_kl_lkr+=PTMSK_kl_lkr;
+   eff_PTMSK_kl_csi2lkr+=PTMSK_kl_lkr*PTMSK_kl_csi2;
+ }
+  }
+
+
+
+		/////////////end ee cuts/////////////
+
+		//kedrsepbeams_report();
+		nevt++;
+		if(Run<10) cout<<"RunNumber<10  \n";
+		//////	t1->Fill();
+	       // }  //trg
+	}
+	     }
+	kedr_close_nat(&closeerr);
+       }  //run end
+     
+   
+   t1->Write();
+   kdb_close(conn); 
+   cout<<"eDaq "<<eDaq<<endl;
+   cout<<"Nevents "<<nevt<<endl; 
+   cout<<"LumE "<<LumE<<" LumP "<<LumP<<" LumM "<<LumM<<endl;
+   cout<<"NCunEE "<<NCutEE<<endl;
+   cout<<"ok end \n"<<endl;
+
+   cout<<"sc2 efficiency: "<<endl;
+   cout<<"ee events selected "<<Nee<<endl;
+   cout<<"eff_PTMSK "<<eff_PTMSK<<endl;
+   cout<<"eff_PTMSK_dn_csi2 "<<eff_PTMSK_dn_csi2<<endl;
+   cout<<"eff_PTMSK_dn_lkr "<<eff_PTMSK_dn_lkr<<endl;
+   cout<<"eff_PTMSK_dn_csi2lkr "<<eff_PTMSK_dn_csi2lkr<<endl;
+   cout<<"eff_PTMSK_kl_csi2 "<<eff_PTMSK_kl_csi2<<endl;
+   cout<<"eff_PTMSK_kl_lkr "<<eff_PTMSK_kl_lkr<<endl;
+   cout<<"eff_PTMSK_kl_csi2lkr "<<eff_PTMSK_kl_csi2lkr<<endl;
+}

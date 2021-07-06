@@ -1,0 +1,127 @@
+ run1 21920 run2 21921
+Initializing mu system data structures... done.
+read table of bb table to DB
+open file:/space/offline/DCREC/GEOM/connections.dc
+file: /space/offline/DCREC/GEOM/connections.dc are closed
+start SetVecCalib
+SetVecCalib reading
+calib params 
+run 21920
+skim file: /spool/skim/Jpsi2015/test
+file '/space/runs/daq021920.nat'
+ kedr_read_trg: error openning "trigger.dat"
+KEDR_READ_NAT: output file "/spool/skim/Jpsi2015/test021920.nat" is opened, stream 1
+ kedrSetRun: initialization, kSimData 0
+ File "param_new.dc" from "/space/offline/DCREC/GEOM/"
+ read DC's geometry data files...
+ File "connections_new2.dc" from /space/offline/DCREC/GEOM/
+ dcgeom L=7,W=1: X,YsWir  49.0032456  6.8153174
+ dcMakeCellCS L=7,W=1: X,Yw -2.6491681  49.4039324 X,YsWire  49.0032456
+  6.8153174 c,s  0.0845201673 -0.996421769 aLor  0.
+ Default DC status is set
+ Bad ADCs: 0 0, bad wires: 0, bad cells 0
+ DC data loaded
+ KDCDBRUNS: standard "dccalibrationsDB.txt" file
+ number of calibations expected 522
+ number of calibrations read 522
+ File "param_new.vd" from "/space/offline/DCREC/GEOM/"
+ File "vdtabl_new.tbl" from /space/offline/DCREC/GEOM/
+ File "badtubes.t" from /space/offline/DCREC/GEOM/
+ 7 VD tubes marked as bad
+ VD geometry is read in, shift VD-DC  0.0315  0.033, bunch dT  1.60000002 -1.5
+ UangleVD:  0. DangleVD:  0.
+ XUshiftVD: -0.0095 YDshiftVD:  0.001
+ XDshiftVD: -0.0095 YDshiftVD:  0.001
+ updateflag: 1
+ no VD tube shift file
+Emc -> Version 1.8.20 (30-03-2017 20:20 +0700 NOVT)
+Emc -> Loading configuration from `param.emc'
+Calib table 'lkrs_calib' 101 Monitor table 'lkrs_calib_test' 101
+Emc -> Initialised successfully
+ kdcvr_read_trk_cor: file "trkeffcor.v" is absent
+ KedrSetRun: run 21920
+ kDCVDrun: run 21920
+ call XT
+ connection opened
+ Use maximum number  for version X(t) in DB : 2
+ test table:  1210
+ kdcreadxtdb: LOAD X(t) DC INFORMATION ...  
+ Table is opened. Status:    1
+ Use angles bins from DB
+ Load  angles bins master calibration from DB
+ call XT COSMIC
+ Bad ADCs: 135 26, bad wires: 22, bad cells 13
+ p1:  1081.97022
+ p2:  1000.18117
+LP:2944LC:98784kdccalibdb: bad calib channels:619 
+ p1:  1082.58602
+ p2:  1008.62284
+ kedrNbad 0 Nbw,a 0 0
+ Bad ADCs: 135 26, bad wires: 217, bad cells 21
+ LKrShape: -1
+ KDCEMCSHIFT file "emcshift_new.dc" from "/space/offline/DCREC/GEOM/"
+ KDCEMCSHIFT: run 21920 dR  0.100000001 phi -2.45030594 xyz -1.03500009
+  0.150300026 -1.81000006 LKrShape -1
+GEmcDBStatus: BadTwr 15: 24 0 24
+Cosmic corrections: 0.867 0.000 abslen 0.00
+ tof_run__: run 21920
+m=0	  tof_BadRun=0
+Getting ToF calibrations from DB for run 21920 ----------
+NumBadToF:3 
+ Alternative VD R(t): CalibRun: 21896
+ Load VD R(t) alternative version 2 fcsu:  244.445007 dt0:  103.width:  52.
+  fcsurat:  4.09089947
+ sc 18 q 3
+ sc 116 q 3
+ KTOFEVN: 2 SC, 3 PMT are dead
+ first calling kdcvd_trigger
+ KEDR_TRIGGER: LVL1 FORMULA IS NOT SPECIFIED
+ assume no LVL1 trigger conditions!
+ KEDR_TRIGGER: LVL2 FORMULA IS NOT SPECIFIED
+ assume no LVL2 trigger conditions!
+ Reconstruction with KEVTRK_H7_1 version 24311299, Kcosmic 0 VD 3 tiltCor 0
+ EMCallowed 0 TOFallowed -1 IPalternative 2 kCosmInSigRuns 0 field  5.97850037
+ kdcemcvec: cos,sin  0.999085665 -0.0427528732 Shifts -1.03500009  0.150300026
+ -1.81000006 Dx,yShiftDz -0.000970000052 -0.00508000003 Zfact  1. dR
+  0.100000001
+ private version of DRTEQ3
+*********
+ run 21920 eDaqNumber 16
+  dedx 6.16361 Ptr 230.362 P 270.78
+  dedx 5.28946 Ptr 347.22 P 404.359
+  dedx 25.7805 Ptr 371.278 P 384.539
+  dedx 17.9514 Ptr 342.022 P 345.882
+  dedx 31.1808 Ptr 83.9885 P 96.0895
+  dedx 30.9104 Ptr 758.674 P 870.731
+  dedx 7.83276 Ptr 244.118 P 261.851
+*********
+ run 21920 eDaqNumber 1399
+  dedx 10.2752 Ptr 319.051 P 384.361
+  dedx 7.34214 Ptr 507.76 P 509.025
+  dedx 24.9701 Ptr 123.511 P 138.26
+  dedx 19.9675 Ptr 216.969 P 316.463
+  dedx 4.43134 Ptr 125.242 P 125.437
+  dedx 5.52418 Ptr 491.386 P 522.033
+  dedx 6363.85 Ptr 179.646 P 306.73
+ CosA -> -1.
+*********
+ run 21920 eDaqNumber 12133
+  dedx 20.1546 Ptr 830.633 P 1478.59
+  dedx 8.84283 Ptr 633.107 P 1180.65
+ CosA -> -1.
+ KEMC_CLSAXIS: EvNum 22192 DAQ 23199 cls 1 Ntwr 1 Etwr  0. Ecls  99.2546692
+ CosA -> -1.
+*********
+ run 21920 eDaqNumber 48710
+  dedx 1.93235 Ptr 165.645 P 215.277
+  dedx 21.0312 Ptr 854.634 P 1096.42
+  dedx 2.88602 Ptr 563.531 P 716.661
+  dedx 12.8682 Ptr 31.5049 P 32.8609
+  dedx 2.50965 Ptr 82.2934 P 160.111
+  dedx 50.6161 Ptr 142.81 P 298.235
+*********
+ run 21920 eDaqNumber 53975
+  dedx 19.0483 Ptr 983.195 P 1020.3
+  dedx 9.11007 Ptr 569.399 P 706.518
+  dedx 5.48796 Ptr 303.54 P 303.764
+  dedx 7.22461 Ptr 238.619 P 244.132
