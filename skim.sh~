@@ -1,6 +1,0 @@
-
-#!sh
-#$ -S /bin/bash
-#$ -v KDBHOST=bison-2
-#$ -cwd
-../bin/Skim -f 22469 -t 22560
